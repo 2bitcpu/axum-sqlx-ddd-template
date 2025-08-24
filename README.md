@@ -42,3 +42,34 @@ docker run --rm -it --mount type=bind,source="$(pwd)",target=/project -w /projec
 ```
 docker run --rm -it --mount type=bind,source="$(pwd)",target=/project -w /project -p 3333:3000 gcr.io/distroless/static-debian12 /project/target/aarch64-unknown-linux-musl/release/web-api
 ```
+
+## Command Line Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--dsn <STRING>` | string | `sqlite:data.db` | Database connection string |
+| `--migration <PATH>` | path | (none) | Path to migration file |
+| `--no-migration` | flag | false | Disable migration execution |
+| `--host <STRING>` | string | `0.0.0.0:8080` | Server host and port |
+| `--cors <LIST>` | list of string | (empty) | Allowed CORS origins (comma-separated) |
+| `--no-cors` | flag | false | Disable CORS |
+| `--static-dir <PATH>` | path | (none) | Path to static files directory |
+| `--no-static` | flag | false | Disable static file serving |
+| `--jwt-issuer <STRING>` | string | crate name | JWT token issuer |
+| `--jwt-secret <STRING>` | string | random UUID | JWT signing secret |
+| `--jwt-expire <INT>` | integer | `86400` (24h) | JWT expiration time (seconds) |
+| `--log-level <STRING>` | string | (none) | Logging level (`info`, `debug`, etc.) |
+| `--no-log` | flag | false | Disable logging |
+
+### Example Usage
+
+```bash
+# Run server with custom database and port
+web-api --dsn sqlite:app.db --host 127.0.0.1:3000
+
+# Run without CORS and static files
+web-api --no-cors --no-static
+
+# Run with migration file and debug logging
+web-api --migration migration.sql --log-level debug
+```
