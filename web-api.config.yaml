@@ -1,0 +1,35 @@
+# データベース設定
+database:
+  # 接続文字列(デフォルト: "sqlite:data.db")
+  # dsn: "sqlite:data.db"
+
+  # DB初期化スクリプト(デフォルト: None)
+  migration: "migration.sql"
+
+# サーバー設定
+# server:
+  # ホスト名とポート(デフォルト: "0.0.0.0:3000")
+  # host: "0.0.0.0:8080"
+
+  # CORS 設定(未設定なら Vec::new())
+  # cors:
+  #  - "http://localhost:3011"
+
+  # 静的ファイル公開ディレクトリ(未設定なら None)
+  # static: "html"
+
+# JWT 設定
+jwt:
+  # JWT 発行者(デフォルト: パッケージ名)
+  # issuer: "company"
+  
+  # JWT 秘密鍵(デフォルト: 自動生成 UUID (自動生成の場合起動ごとに変わる))
+  # secret: "mysecret"
+  
+  # JWT 有効期限(秒、デフォルト: 86400)
+  expire: 86400
+
+# ログ設定
+# log:
+  # レベル(未設定なら None)
+  # level: ERROR

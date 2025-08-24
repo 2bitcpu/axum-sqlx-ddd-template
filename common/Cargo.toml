@@ -1,0 +1,14 @@
+[package]
+name = "common"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+clap.workspace = true
+once_cell.workspace = true
+serde.workspace = true
+serde_yaml.workspace = true
+sqlx.workspace = true
+tokio = { workspace = true, features = ["fs"], default-features = false }
+tracing-subscriber.workspace = true
+uuid.workspace = true

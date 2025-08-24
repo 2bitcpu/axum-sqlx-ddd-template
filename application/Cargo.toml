@@ -1,0 +1,15 @@
+[package]
+name = "application"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+derive-new.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+
+common.workspace = true
+domain.workspace = true
+simple-jwt.workspace = true
+async-argon2.workspace = true
