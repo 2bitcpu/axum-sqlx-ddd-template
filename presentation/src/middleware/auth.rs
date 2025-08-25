@@ -14,15 +14,15 @@ use axum_extra::{
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct AuthUser {
+pub struct AuthMember {
     pub account: String,
 }
 #[derive(Clone)]
-pub struct AuthOptionUser {
+pub struct AuthOptionMember {
     pub account: Option<String>,
 }
 
-impl<S> FromRequestParts<S> for AuthUser
+impl<S> FromRequestParts<S> for AuthMember
 where
     S: Send + Sync,
 {
@@ -54,13 +54,13 @@ pub async fn auth_guard(
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    let auth_account = AuthUser { account };
+    let auth_account = AuthMember { account };
     request.extensions_mut().insert(auth_account);
 
     Ok(next.run(request).await)
 }
 
-impl<S> FromRequestParts<S> for AuthOptionUser
+impl<S> FromRequestParts<S> for AuthOptionMember
 where
     S: Send + Sync,
 {
@@ -80,7 +80,7 @@ pub async fn auth_option_guard(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let mut auth_account = AuthOptionUser { account: None };
+    let mut auth_account = AuthOptionMember { account: None };
 
     if let Ok(bearer) = request
         .extract_parts::<TypedHeader<Authorization<Bearer>>>()

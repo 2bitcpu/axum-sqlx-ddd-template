@@ -11,13 +11,11 @@ pub struct MemberRepositoryImpl<'a> {
 #[async_trait]
 impl<'a> MemberRepository for MemberRepositoryImpl<'a> {
     async fn insert(&mut self, entity: &MemberEntity) -> Result<MemberEntity, BoxError> {
-        let rec = sqlx::query_as::<_, MemberEntity>(
-            "INSERT INTO member (account,password) VALUES (?,?) RETURNING *",
-        )
-        .bind(&entity.account)
-        .bind(&entity.password)
-        .fetch_one(&mut *self.executor)
-        .await?;
+        let rec = sqlx::query_as::<_, MemberEntity>("INSERT INTO member (account,password) VALUES (?,?) RETURNING *")
+            .bind(&entity.account)
+            .bind(&entity.password)
+            .fetch_one(&mut *self.executor)
+            .await?;
 
         Ok(rec)
     }

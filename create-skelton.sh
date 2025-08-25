@@ -19,7 +19,7 @@ cargo add axum --features macros
 cargo add axum-extra --features typed-header --no-default-features
 cargo add tower --features timeout --no-default-features
 cargo add tower-http --features fs,cors --no-default-features
-cargo add sqlx --features runtime-tokio-rustls,chrono,derive --no-default-features
+cargo add sqlx --features runtime-tokio-rustls,chrono,derive,sqlite --no-default-features
 cargo add jsonwebtoken --no-default-features
 cargo add uuid --features v4,serde --no-default-features
 cargo add argon2 --features alloc,password-hash,std --no-default-features
@@ -199,30 +199,15 @@ sqlx.workspace = true
 tokio = { workspace = true, features = ["fs"], default-features = false }
 tracing-subscriber.workspace = true
 uuid.workspace = true
-
-[features]
-default = ["sqlite"]
-sqlite = ["sqlx/sqlite"]
-postgres = ["sqlx/postgres"]
 EOF
 
 
 cat <<EOF > common/src/types.rs
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-#[cfg(feature = "sqlite")]
 pub type DbPool = sqlx::SqlitePool;
-#[cfg(feature = "sqlite")]
 pub type DbExecutor = sqlx::SqliteConnection;
-#[cfg(feature = "sqlite")]
 pub type Db = sqlx::sqlite::Sqlite;
-
-#[cfg(feature = "postgres")]
-pub type DbPool = sqlx::PgPool;
-#[cfg(feature = "postgres")]
-pub type DbExecutor = sqlx::PgConnection;
-#[cfg(feature = "postgres")]
-pub type Db = sqlx::Postgres;
 EOF
 
 cat <<EOF > common/src/setup.rs
@@ -232,46 +217,23 @@ use crate::types::{BoxError, DbPool};
 use sqlx::Executor;
 use std::str::FromStr;
 
-#[cfg(feature = "postgres")]
-use sqlx::postgres::PgConnectOptions;
-#[cfg(feature = "sqlite")]
 use sqlx::sqlite::SqliteConnectOptions;
 
 pub async fn init_db(dsn: &str) -> Result<DbPool, BoxError> {
-    #[cfg(feature = "sqlite")]
-    {
-        let options = SqliteConnectOptions::from_str(dsn)?.create_if_missing(true);
-        let pool = sqlx::SqlitePool::connect_with(options).await?;
+    let options = SqliteConnectOptions::from_str(dsn)?.create_if_missing(true);
+    let pool = sqlx::SqlitePool::connect_with(options).await?;
 
-        if let Some(file) = &config::CONFIG.database.migration {
-            if let Ok(ddl) = tokio::fs::read_to_string(file).await {
-                for stmt in ddl.split(';') {
-                    let stmt = stmt.trim();
-                    if !stmt.is_empty() {
-                        pool.execute(stmt).await?;
-                    }
+    if let Some(file) = &config::CONFIG.database.migration {
+        if let Ok(ddl) = tokio::fs::read_to_string(file).await {
+            for stmt in ddl.split(';') {
+                let stmt = stmt.trim();
+                if !stmt.is_empty() {
+                    pool.execute(stmt).await?;
                 }
             }
         }
-        Ok(pool)
     }
-
-    #[cfg(feature = "postgres")]
-    {
-        let options = PgConnectOptions::from_str(dsn)?;
-        let pool = sqlx::PgPool::connect_with(options).await?;
-        if let Some(file) = &config::CONFIG.database.migration {
-            if let Ok(ddl) = tokio::fs::read_to_string(file).await {
-                for stmt in ddl.split(';') {
-                    let stmt = stmt.trim();
-                    if !stmt.is_empty() {
-                        pool.execute(stmt).await?;
-                    }
-                }
-            }
-        }
-        Ok(pool)
-    }
+    Ok(pool)
 }
 EOF
 
@@ -1463,14 +1425,6 @@ EOF
 cd web-api
 cargo add libsqlite3-sys@^0.30.1 --optional --no-default-features
 cd ../
-
-cat <<EOF >> web-api/Cargo.toml
-
-[features]
-default = ["sqlite"]
-sqlite = ["sqlx/sqlite", "libsqlite3-sys"]
-postgres = ["sqlx/postgres"]
-EOF
 
 cat <<EOF > web-api/src/main.rs
 use application::UseCaseModuleImpl;

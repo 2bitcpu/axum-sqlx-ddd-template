@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
-use crate::interface::member::MemberRepository;
 use crate::interface::todo::TodoRepository;
+use crate::interface::member::MemberRepository;
 use common::types::BoxError;
 
 #[async_trait]
