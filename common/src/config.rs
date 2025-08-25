@@ -48,7 +48,7 @@ impl Default for Config {
                 migration: None,
             },
             server: ServerConfig {
-                host: "0.0.0.0:8080".to_string(),
+                host: "0.0.0.0:3000".to_string(),
                 cors: vec![],
                 static_dir: None,
             },
