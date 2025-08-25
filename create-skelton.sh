@@ -326,7 +326,7 @@ impl Default for Config {
                 migration: None,
             },
             server: ServerConfig {
-                host: "0.0.0.0:8080".to_string(),
+                host: "0.0.0.0:3000".to_string(),
                 cors: vec![],
                 static_dir: None,
             },
@@ -741,7 +741,7 @@ pub struct MemberRepositoryImpl<'a> {
 #[async_trait]
 impl<'a> MemberRepository for MemberRepositoryImpl<'a> {
     async fn insert(&mut self, entity: &MemberEntity) -> Result<MemberEntity, BoxError> {
-        let rec = sqlx::query_as::<_, MemberEntity>("INSERT INTO  (account,password) VALUES (?,?) RETURNING *")
+        let rec = sqlx::query_as::<_, MemberEntity>("INSERT INTO member (account,password) VALUES (?,?) RETURNING *")
             .bind(&entity.account)
             .bind(&entity.password)
             .fetch_one(&mut *self.executor)
@@ -751,7 +751,7 @@ impl<'a> MemberRepository for MemberRepositoryImpl<'a> {
     }
 
     async fn select(&mut self, account: &str) -> Result<Option<MemberEntity>, BoxError> {
-        let rec = sqlx::query_as::<_, MemberEntity>("SELECT * FROM  WHERE  account=?")
+        let rec = sqlx::query_as::<_, MemberEntity>("SELECT * FROM member WHERE  account=?")
             .bind(&account)
             .fetch_optional(&mut *self.executor)
             .await?;
