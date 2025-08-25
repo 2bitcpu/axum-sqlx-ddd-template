@@ -10,6 +10,7 @@ serde.workspace = true
 serde_yaml.workspace = true
 tokio = { workspace = true, features = ["fs"], default-features = false }
 tracing-subscriber.workspace = true
+
 uuid.workspace = true
 sqlx = { workspace = true, default-features = false }
 

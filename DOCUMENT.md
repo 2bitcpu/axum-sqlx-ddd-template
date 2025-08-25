@@ -9,8 +9,8 @@ CT="Content-Type: application/json"
 # JSON を変数に格納
 SIGNUP_JSON='{"account":"user1","password":"pass123","confirmedPassword":"pass123"}'
 SIGNIN_JSON='{"account":"user1","password":"pass123"}'
-CREATE_TODO_JSON='{"account":"user1","due_date":"2023-03-01T12:00:00Z","content":"今日やること！","complete":false}'
-EDIT_TODO_JSON='{"id":1,"account":"user1","due_date":"2023-03-01T12:00:00Z","content":"今日やること！","complete":false}'
+CREATE_TODO_JSON='{"account":"user1","dueDate":"2023-03-01T12:00:00Z","content":"今日やること！","complete":false}'
+EDIT_TODO_JSON='{"id":1,"account":"user1","dueDate":"2023-03-01T12:00:00Z","content":"今日やること！","complete":false}'
 
 # 1. サインアップ
 curl -i -X POST "$HOST/service/auth/signup" -H "$CT" -d "$SIGNUP_JSON"

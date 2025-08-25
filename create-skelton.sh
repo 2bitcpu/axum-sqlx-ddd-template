@@ -342,11 +342,11 @@ impl Default for Config {
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| {
     let mut cfg = Config::default();
-    let pkg = env!("CARGO_PKG_NAME");
-    let filename = format!("{pkg}.config.yaml");
+    let exe_name = Config::exe_basename();
+    let filename = format!("{exe_name}.config.yaml");
 
     let paths = vec![
-        format!("/etc/{pkg}/{filename}"),
+        format!("/etc/{exe_name}/{filename}"),
         format!(
             "{}/{}",
             std::env::current_exe().unwrap().parent().unwrap().display(),
@@ -521,6 +521,13 @@ impl Config {
         } else if let Some(level) = &cli.log_level {
             self.log.level = Some(level.clone());
         }
+    }
+
+    fn exe_basename() -> String {
+        std::env::current_exe()
+            .ok()
+            .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().to_string()))
+            .unwrap_or_else(|| "unknown".to_string())
     }
 }
 
