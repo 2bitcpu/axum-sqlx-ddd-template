@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
+use crate::interface::member::MemberRepository;
 use crate::interface::todo::TodoRepository;
-use crate::interface::user::UserRepository;
 use common::types::BoxError;
 
 #[async_trait]
@@ -10,7 +10,7 @@ pub trait UnitOfWork: Send {
     async fn rollback(self: Box<Self>) -> Result<(), BoxError>;
 
     fn todo<'s>(&'s mut self) -> Box<dyn TodoRepository + 's>;
-    fn user<'s>(&'s mut self) -> Box<dyn UserRepository + 's>;
+    fn member<'s>(&'s mut self) -> Box<dyn MemberRepository + 's>;
 }
 
 #[async_trait]

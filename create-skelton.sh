@@ -19,7 +19,7 @@ cargo add axum --features macros
 cargo add axum-extra --features typed-header --no-default-features
 cargo add tower --features timeout --no-default-features
 cargo add tower-http --features fs,cors --no-default-features
-cargo add sqlx --features runtime-tokio-rustls,chrono,derive,sqlite --no-default-features
+cargo add sqlx --features runtime-tokio-rustls,chrono,derive --no-default-features
 cargo add jsonwebtoken --no-default-features
 cargo add uuid --features v4,serde --no-default-features
 cargo add argon2 --features alloc,password-hash,std --no-default-features
@@ -199,33 +199,79 @@ sqlx.workspace = true
 tokio = { workspace = true, features = ["fs"], default-features = false }
 tracing-subscriber.workspace = true
 uuid.workspace = true
+
+[features]
+default = ["sqlite"]
+sqlite = ["sqlx/sqlite"]
+postgres = ["sqlx/postgres"]
 EOF
 
 
 cat <<EOF > common/src/types.rs
 pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+#[cfg(feature = "sqlite")]
 pub type DbPool = sqlx::SqlitePool;
+#[cfg(feature = "sqlite")]
 pub type DbExecutor = sqlx::SqliteConnection;
+#[cfg(feature = "sqlite")]
 pub type Db = sqlx::sqlite::Sqlite;
+
+#[cfg(feature = "postgres")]
+pub type DbPool = sqlx::PgPool;
+#[cfg(feature = "postgres")]
+pub type DbExecutor = sqlx::PgConnection;
+#[cfg(feature = "postgres")]
+pub type Db = sqlx::Postgres;
 EOF
 
 cat <<EOF > common/src/setup.rs
 use crate::config;
 use crate::types::{BoxError, DbPool};
-use sqlx::sqlite::SqliteConnectOptions;
+
+use sqlx::Executor;
 use std::str::FromStr;
 
-pub async fn init_db(dsn: &str) -> Result<DbPool, BoxError> {
-    let options = SqliteConnectOptions::from_str(dsn)?.create_if_missing(true);
-    let pool = sqlx::SqlitePool::connect_with(options).await?;
+#[cfg(feature = "postgres")]
+use sqlx::postgres::PgConnectOptions;
+#[cfg(feature = "sqlite")]
+use sqlx::sqlite::SqliteConnectOptions;
 
-    if let Some(file) = &config::CONFIG.database.migration {
-        if let Ok(query) = tokio::fs::read_to_string(file).await {
-            sqlx::query(&query).execute(&pool).await?;
+pub async fn init_db(dsn: &str) -> Result<DbPool, BoxError> {
+    #[cfg(feature = "sqlite")]
+    {
+        let options = SqliteConnectOptions::from_str(dsn)?.create_if_missing(true);
+        let pool = sqlx::SqlitePool::connect_with(options).await?;
+
+        if let Some(file) = &config::CONFIG.database.migration {
+            if let Ok(ddl) = tokio::fs::read_to_string(file).await {
+                for stmt in ddl.split(';') {
+                    let stmt = stmt.trim();
+                    if !stmt.is_empty() {
+                        pool.execute(stmt).await?;
+                    }
+                }
+            }
         }
+        Ok(pool)
     }
 
-    Ok(pool)
+    #[cfg(feature = "postgres")]
+    {
+        let options = PgConnectOptions::from_str(dsn)?;
+        let pool = sqlx::PgPool::connect_with(options).await?;
+        if let Some(file) = &config::CONFIG.database.migration {
+            if let Ok(ddl) = tokio::fs::read_to_string(file).await {
+                for stmt in ddl.split(';') {
+                    let stmt = stmt.trim();
+                    if !stmt.is_empty() {
+                        pool.execute(stmt).await?;
+                    }
+                }
+            }
+        }
+        Ok(pool)
+    }
 }
 EOF
 
@@ -549,12 +595,12 @@ pub struct TodoEntity {
 }
 EOF
 
-cat <<EOF > domain/src/model/user.rs
+cat <<EOF > domain/src/model/member.rs
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
 #[derive(FromRow, Serialize, Deserialize, Clone, Debug)]
-pub struct UserEntity {
+pub struct MemberEntity {
     pub account: String,
     pub password: String,
 }
@@ -562,7 +608,7 @@ EOF
 
 cat <<EOF > domain/src/model/mod.rs
 pub mod todo;
-pub mod user;
+pub mod member;
 EOF
 
 mkdir -p domain/src/interface
@@ -580,30 +626,30 @@ pub trait TodoRepository: Send + Sync {
 }
 EOF
 
-cat <<EOF > domain/src/interface/user.rs
+cat <<EOF > domain/src/interface/member.rs
 use async_trait::async_trait;
 use common::types::BoxError;
 
-use crate::model::user::UserEntity;
+use crate::model::member::MemberEntity;
 
 #[async_trait]
-pub trait UserRepository: Send + Sync {
-    async fn insert(&mut self, user: &UserEntity) -> Result<UserEntity, BoxError>;
-    async fn select(&mut self, accunt: &str) -> Result<Option<UserEntity>, BoxError>;
+pub trait MemberRepository: Send + Sync {
+    async fn insert(&mut self, member: &MemberEntity) -> Result<MemberEntity, BoxError>;
+    async fn select(&mut self, accunt: &str) -> Result<Option<MemberEntity>, BoxError>;
 }
 EOF
 
 
 cat <<EOF > domain/src/interface/mod.rs
 pub mod todo;
-pub mod user;
+pub mod member;
 EOF
 
 cat <<EOF > domain/src/uow.rs
 use async_trait::async_trait;
 
 use crate::interface::todo::TodoRepository;
-use crate::interface::user::UserRepository;
+use crate::interface::member::MemberRepository;
 use common::types::BoxError;
 
 #[async_trait]
@@ -612,7 +658,7 @@ pub trait UnitOfWork: Send {
     async fn rollback(self: Box<Self>) -> Result<(), BoxError>;
 
     fn todo<'s>(&'s mut self) -> Box<dyn TodoRepository + 's>;
-    fn user<'s>(&'s mut self) -> Box<dyn UserRepository + 's>;
+    fn member<'s>(&'s mut self) -> Box<dyn MemberRepository + 's>;
 }
 
 #[async_trait]
@@ -681,21 +727,21 @@ impl<'a> TodoRepository for TodoRepositoryImpl<'a> {
 }
 EOF
 
-cat <<EOF > infrastructure/src/repository/user.rs
+cat <<EOF > infrastructure/src/repository/member.rs
 use async_trait::async_trait;
 use common::types::{BoxError, DbExecutor};
 use derive_new::new;
-use domain::{interface::user::UserRepository, model::user::UserEntity};
+use domain::{interface::member::MemberRepository, model::member::MemberEntity};
 
 #[derive(new, Debug)]
-pub struct UserRepositoryImpl<'a> {
+pub struct MemberRepositoryImpl<'a> {
     executor: &'a mut DbExecutor,
 }
 
 #[async_trait]
-impl<'a> UserRepository for UserRepositoryImpl<'a> {
-    async fn insert(&mut self, entity: &UserEntity) -> Result<UserEntity, BoxError> {
-        let rec = sqlx::query_as::<_, UserEntity>("INSERT INTO  (account,password) VALUES (?,?) RETURNING *")
+impl<'a> MemberRepository for MemberRepositoryImpl<'a> {
+    async fn insert(&mut self, entity: &MemberEntity) -> Result<MemberEntity, BoxError> {
+        let rec = sqlx::query_as::<_, MemberEntity>("INSERT INTO  (account,password) VALUES (?,?) RETURNING *")
             .bind(&entity.account)
             .bind(&entity.password)
             .fetch_one(&mut *self.executor)
@@ -704,8 +750,8 @@ impl<'a> UserRepository for UserRepositoryImpl<'a> {
         Ok(rec)
     }
 
-    async fn select(&mut self, account: &str) -> Result<Option<UserEntity>, BoxError> {
-        let rec = sqlx::query_as::<_, UserEntity>("SELECT * FROM  WHERE  account=?")
+    async fn select(&mut self, account: &str) -> Result<Option<MemberEntity>, BoxError> {
+        let rec = sqlx::query_as::<_, MemberEntity>("SELECT * FROM  WHERE  account=?")
             .bind(&account)
             .fetch_optional(&mut *self.executor)
             .await?;
@@ -717,7 +763,7 @@ EOF
 
 cat <<EOF > infrastructure/src/repository/mod.rs
 pub mod todo;
-pub mod user;
+pub mod member;
 EOF
 
 cat <<EOF > infrastructure/src/uow.rs
@@ -726,10 +772,10 @@ use async_trait::async_trait;
 use common::types::{BoxError, Db, DbPool};
 use domain::{
     UnitOfWork, UnitOfWorkProvider, interface::todo::TodoRepository,
-    interface::user::UserRepository,
+    interface::member::MemberRepository,
 };
 
-use crate::repository::{todo::TodoRepositoryImpl, user::UserRepositoryImpl};
+use crate::repository::{todo::TodoRepositoryImpl, member::MemberRepositoryImpl};
 
 pub struct UnitOfWorkImpl<'a> {
     tx: sqlx::Transaction<'a, Db>,
@@ -749,8 +795,8 @@ impl<'a> UnitOfWork for UnitOfWorkImpl<'a> {
     fn todo<'s>(&'s mut self) -> Box<dyn TodoRepository + 's> {
         Box::new(TodoRepositoryImpl::new(&mut self.tx))
     }
-    fn user<'s>(&'s mut self) -> Box<dyn UserRepository + 's> {
-        Box::new(UserRepositoryImpl::new(&mut self.tx))
+    fn member<'s>(&'s mut self) -> Box<dyn MemberRepository + 's> {
+        Box::new(MemberRepositoryImpl::new(&mut self.tx))
     }
 }
 
@@ -917,7 +963,7 @@ use std::sync::Arc;
 
 use crate::errors::UseCaseError;
 use crate::model::auth::{SignupRequest, SignupResponse, SigninRequest, SigninResponse};
-use domain::{UnitOfWorkProvider, model::user::UserEntity};
+use domain::{UnitOfWorkProvider, model::member::MemberEntity};
 use common::config;
 
 pub struct AuthUseCase {
@@ -937,17 +983,17 @@ impl AuthUseCase {
                 "Password confirmation does not match".to_string(),
             ));
         }
-        if uow.user().select(&dto.account).await?.is_some() {
+        if uow.member().select(&dto.account).await?.is_some() {
             return Err(UseCaseError::AccountIdExists);
         }
         
         let hash_password = async_argon2::hash(dto.password).await?;
-        let entity = UserEntity {
+        let entity = MemberEntity {
             account: dto.account.clone(),
             password: hash_password,
         };
 
-        let entity = uow.user().insert(&entity).await?;
+        let entity = uow.member().insert(&entity).await?;
         uow.commit().await?;
 
         Ok(SignupResponse {
@@ -958,13 +1004,13 @@ impl AuthUseCase {
     pub async fn signin(&self, dto: SigninRequest) -> Result<SigninResponse, UseCaseError> {
         let mut uow = self.provider.begin().await?;
 
-        let user = uow.user().select(&dto.account).await?;
-        let user = match user {
+        let member = uow.member().select(&dto.account).await?;
+        let member = match member {
             Some(u) => u,
             None => return Err(UseCaseError::Unauthorized),
         };
 
-        if !async_argon2::verify(dto.password, user.password).await? {
+        if !async_argon2::verify(dto.password, member.password).await? {
             return Err(UseCaseError::Unauthorized);
         }
 
@@ -982,11 +1028,11 @@ impl AuthUseCase {
 
         let mut uow = self.provider.begin().await?;
 
-        let user = match uow.user().select(&claims.sub).await? {
+        let member = match uow.member().select(&claims.sub).await? {
             Some(u) => u,
             None => return Err(UseCaseError::Unauthorized),
         };
-        Ok(user.account.clone())
+        Ok(member.account.clone())
     }
 }
 EOF
@@ -1180,15 +1226,15 @@ use axum_extra::{
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct AuthUser {
+pub struct AuthMember {
     pub account: String,
 }
 #[derive(Clone)]
-pub struct AuthOptionUser {
+pub struct AuthOptionMember {
     pub account: Option<String>,
 }
 
-impl<S> FromRequestParts<S> for AuthUser
+impl<S> FromRequestParts<S> for AuthMember
 where
     S: Send + Sync,
 {
@@ -1220,13 +1266,13 @@ pub async fn auth_guard(
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
-    let auth_account = AuthUser { account };
+    let auth_account = AuthMember { account };
     request.extensions_mut().insert(auth_account);
 
     Ok(next.run(request).await)
 }
 
-impl<S> FromRequestParts<S> for AuthOptionUser
+impl<S> FromRequestParts<S> for AuthOptionMember
 where
     S: Send + Sync,
 {
@@ -1246,7 +1292,7 @@ pub async fn auth_option_guard(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let mut auth_account = AuthOptionUser { account: None };
+    let mut auth_account = AuthOptionMember { account: None };
 
     if let Ok(bearer) = request
         .extract_parts::<TypedHeader<Authorization<Bearer>>>()
@@ -1297,13 +1343,13 @@ use axum::{Extension, Json, extract::Path, extract::State};
 use std::sync::Arc;
 
 use crate::errors::ApiError;
-use crate::middleware::auth::{AuthOptionUser, AuthUser};
+use crate::middleware::auth::{AuthOptionMember, AuthMember};
 use application::UseCaseModule;
 use application::model::todo::{CreateTodoRequest, TodoDto};
 
 pub async fn create(
     State(usecases): State<Arc<dyn UseCaseModule>>,
-    Extension(_guard): Extension<AuthUser>,
+    Extension(_guard): Extension<AuthMember>,
     Json(dto): Json<CreateTodoRequest>,
 ) -> Result<Json<TodoDto>, ApiError> {
     let res = usecases.todo().create(dto).await?;
@@ -1312,7 +1358,7 @@ pub async fn create(
 
 pub async fn find(
     State(usecases): State<Arc<dyn UseCaseModule>>,
-    Extension(_guard): Extension<AuthOptionUser>,
+    Extension(_guard): Extension<AuthOptionMember>,
     Path(id): Path<i64>,
 ) -> Result<Json<Option<TodoDto>>, ApiError> {
     let res = usecases.todo().find(id).await?;
@@ -1403,12 +1449,21 @@ tracing-subscriber.workspace = true
 
 axum.workspace = true
 tokio.workspace = true
+sqlx.workspace = true
 
 EOF
 
 cd web-api
 cargo add libsqlite3-sys@^0.30.1 --optional --no-default-features
 cd ../
+
+cat <<EOF >> web-api/Cargo.toml
+
+[features]
+default = ["sqlite"]
+sqlite = ["sqlx/sqlite", "libsqlite3-sys"]
+postgres = ["sqlx/postgres"]
+EOF
 
 cat <<EOF > web-api/src/main.rs
 use application::UseCaseModuleImpl;

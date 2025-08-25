@@ -13,8 +13,10 @@ tracing-subscriber.workspace = true
 
 axum.workspace = true
 tokio.workspace = true
+sqlx.workspace = true
 libsqlite3-sys = { version = "^0.30.1", default-features = false, optional = true }
 
 [features]
-libsqlite3-sys = ["dep:libsqlite3-sys"]
-
+default = ["sqlite"]
+sqlite = ["sqlx/sqlite", "libsqlite3-sys"]
+postgres = ["sqlx/postgres"]

@@ -2,11 +2,11 @@ use async_trait::async_trait;
 
 use common::types::{BoxError, Db, DbPool};
 use domain::{
-    UnitOfWork, UnitOfWorkProvider, interface::todo::TodoRepository,
-    interface::user::UserRepository,
+    UnitOfWork, UnitOfWorkProvider, interface::member::MemberRepository,
+    interface::todo::TodoRepository,
 };
 
-use crate::repository::{todo::TodoRepositoryImpl, user::UserRepositoryImpl};
+use crate::repository::{member::MemberRepositoryImpl, todo::TodoRepositoryImpl};
 
 pub struct UnitOfWorkImpl<'a> {
     tx: sqlx::Transaction<'a, Db>,
@@ -26,8 +26,8 @@ impl<'a> UnitOfWork for UnitOfWorkImpl<'a> {
     fn todo<'s>(&'s mut self) -> Box<dyn TodoRepository + 's> {
         Box::new(TodoRepositoryImpl::new(&mut self.tx))
     }
-    fn user<'s>(&'s mut self) -> Box<dyn UserRepository + 's> {
-        Box::new(UserRepositoryImpl::new(&mut self.tx))
+    fn member<'s>(&'s mut self) -> Box<dyn MemberRepository + 's> {
+        Box::new(MemberRepositoryImpl::new(&mut self.tx))
     }
 }
 

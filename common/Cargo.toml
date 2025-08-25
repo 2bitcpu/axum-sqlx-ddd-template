@@ -8,7 +8,13 @@ clap.workspace = true
 once_cell.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
-sqlx.workspace = true
 tokio = { workspace = true, features = ["fs"], default-features = false }
 tracing-subscriber.workspace = true
 uuid.workspace = true
+sqlx = { workspace = true, default-features = false }
+
+[features]
+default = ["sqlite"]
+
+sqlite = ["sqlx/sqlite"]
+postgres = ["sqlx/postgres"]

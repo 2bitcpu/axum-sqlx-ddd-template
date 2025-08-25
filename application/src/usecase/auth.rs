@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::errors::UseCaseError;
-use crate::model::auth::{SignupRequest, SignupResponse, SigninRequest, SigninResponse};
-use domain::{UnitOfWorkProvider, model::user::UserEntity};
+use crate::model::auth::{SigninRequest, SigninResponse, SignupRequest, SignupResponse};
 use common::config;
+use domain::{UnitOfWorkProvider, model::member::MemberEntity};
 
 pub struct AuthUseCase {
     provider: Arc<dyn UnitOfWorkProvider + Send + Sync>,
@@ -22,17 +22,17 @@ impl AuthUseCase {
                 "Password confirmation does not match".to_string(),
             ));
         }
-        if uow.user().select(&dto.account).await?.is_some() {
+        if uow.member().select(&dto.account).await?.is_some() {
             return Err(UseCaseError::AccountIdExists);
         }
-        
+
         let hash_password = async_argon2::hash(dto.password).await?;
-        let entity = UserEntity {
+        let entity = MemberEntity {
             account: dto.account.clone(),
             password: hash_password,
         };
 
-        let entity = uow.user().insert(&entity).await?;
+        let entity = uow.member().insert(&entity).await?;
         uow.commit().await?;
 
         Ok(SignupResponse {
@@ -43,7 +43,7 @@ impl AuthUseCase {
     pub async fn signin(&self, dto: SigninRequest) -> Result<SigninResponse, UseCaseError> {
         let mut uow = self.provider.begin().await?;
 
-        let user = uow.user().select(&dto.account).await?;
+        let user = uow.member().select(&dto.account).await?;
         let user = match user {
             Some(u) => u,
             None => return Err(UseCaseError::Unauthorized),
@@ -54,7 +54,8 @@ impl AuthUseCase {
         }
 
         let claims = simple_jwt::Claims::new(&dto.account, config::CONFIG.jwt.expire);
-        let token = simple_jwt::encode(&claims).map_err(|e| UseCaseError::Infrastructure(Box::new(e)))?;
+        let token =
+            simple_jwt::encode(&claims).map_err(|e| UseCaseError::Infrastructure(Box::new(e)))?;
 
         Ok(SigninResponse { token })
     }
@@ -67,7 +68,7 @@ impl AuthUseCase {
 
         let mut uow = self.provider.begin().await?;
 
-        let user = match uow.user().select(&claims.sub).await? {
+        let user = match uow.member().select(&claims.sub).await? {
             Some(u) => u,
             None => return Err(UseCaseError::Unauthorized),
         };
