@@ -22,12 +22,12 @@ database:
 
 # JWT 設定
 jwt:
-  # JWT 発行者(デフォルト: パッケージ名)
-  # issuer: "company"
+  # JWT 発行者(デフォルト: 実行ファイル名(拡張子を除く))
+  # issuer: "web-api"
   
   # JWT 秘密鍵(デフォルト: 自動生成 UUID (自動生成の場合起動ごとに変わる))
-  # secret: "mysecret"
-  
+  # secret: "A1935876-D253-4698-8412-01B97E54FD6E"
+
   # JWT 有効期限(秒、デフォルト: 86400)
   expire: 86400
 

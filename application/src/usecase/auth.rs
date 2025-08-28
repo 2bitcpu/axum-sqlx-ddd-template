@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::errors::UseCaseError;
-use crate::model::auth::{SignupRequest, SignupResponse, SigninRequest, SigninResponse};
+use crate::model::auth::{SigninRequest, SigninResponse, SignupRequest, SignupResponse};
 use domain::{UnitOfWorkProvider, model::member::MemberEntity};
 
 pub struct AuthUseCase {
@@ -24,7 +24,7 @@ impl AuthUseCase {
         if uow.member().select(&dto.account).await?.is_some() {
             return Err(UseCaseError::AccountIdExists);
         }
-        
+
         let hash_password = async_argon2::hash(dto.password).await?;
         let entity = MemberEntity {
             account: dto.account.clone(),
@@ -52,14 +52,23 @@ impl AuthUseCase {
             return Err(UseCaseError::Unauthorized);
         }
 
-        let claims = simple_jwt::Claims::new(&dto.account, config::CONFIG.jwt.expire);
-        let token = simple_jwt::encode(&claims).map_err(|e| UseCaseError::Infrastructure(Box::new(e)))?;
+        let claims = simple_jwt::Claims::new(
+            &dto.account,
+            &config::CONFIG.jwt.issuer,
+            config::CONFIG.jwt.expire,
+        );
+        let token = simple_jwt::encode(&claims, &config::CONFIG.jwt.secret)
+            .map_err(|e| UseCaseError::Infrastructure(Box::new(e)))?;
 
         Ok(SigninResponse { token })
     }
 
     pub async fn authenticate(&self, token: &str) -> Result<String, UseCaseError> {
-        let claims = match simple_jwt::decode(token) {
+        let claims = match simple_jwt::decode(
+            token,
+            &config::CONFIG.jwt.issuer,
+            &config::CONFIG.jwt.secret,
+        ) {
             Ok(c) => c,
             Err(_) => return Err(UseCaseError::Unauthorized),
         };

@@ -140,9 +140,6 @@ cat <<EOF > libs/simple-jwt/src/lib.rs
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
-
-static JWT_SECRET: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Claims {
@@ -154,11 +151,11 @@ pub struct Claims {
 }
 
 impl Claims {
-    pub fn new(sub: &str, duration_seconds: i64) -> Self {
+    pub fn new(sub: &str, iss: &str, duration_seconds: i64) -> Self {
         let current_time: DateTime<Utc> = Utc::now();
         Self {
             sub: sub.to_string(),
-            iss: exe_basename(),
+            iss: iss.to_string(),
             iat: current_time.timestamp(),
             exp: current_time.timestamp() + duration_seconds,
             jti: uuid::Uuid::new_v4().to_string(),
@@ -166,33 +163,26 @@ impl Claims {
     }
 }
 
-pub fn encode(claims: &Claims) -> Result<String, jsonwebtoken::errors::Error> {
+pub fn encode(claims: &Claims, secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
     Ok(jsonwebtoken::encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(JWT_SECRET.to_string().as_bytes()),
+        &EncodingKey::from_secret(secret.to_string().as_bytes()),
     )?)
 }
 
-pub fn decode(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+pub fn decode(token: &str, iss: &str, secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     let mut validation = Validation::default();
     validation.leeway = 30;
     validation.validate_exp = true;
-    validation.set_issuer(&[exe_basename()]);
+    validation.set_issuer(&[iss]);
     let claims: Claims = jsonwebtoken::decode::<Claims>(
         &token,
-        &DecodingKey::from_secret(JWT_SECRET.to_string().as_ref()),
+        &DecodingKey::from_secret(secret.to_string().as_ref()),
         &validation,
     )?
     .claims;
     Ok(claims)
-}
-
-fn exe_basename() -> String {
-    std::env::current_exe()
-        .ok()
-        .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().to_string()))
-        .unwrap_or_else(|| "unknown".to_string())
 }
 EOF
 
@@ -959,7 +949,7 @@ cat <<EOF > application/src/usecase/auth.rs
 use std::sync::Arc;
 
 use crate::errors::UseCaseError;
-use crate::model::auth::{SignupRequest, SignupResponse, SigninRequest, SigninResponse};
+use crate::model::auth::{SigninRequest, SigninResponse, SignupRequest, SignupResponse};
 use domain::{UnitOfWorkProvider, model::member::MemberEntity};
 
 pub struct AuthUseCase {
@@ -982,7 +972,7 @@ impl AuthUseCase {
         if uow.member().select(&dto.account).await?.is_some() {
             return Err(UseCaseError::AccountIdExists);
         }
-        
+
         let hash_password = async_argon2::hash(dto.password).await?;
         let entity = MemberEntity {
             account: dto.account.clone(),
@@ -1010,14 +1000,23 @@ impl AuthUseCase {
             return Err(UseCaseError::Unauthorized);
         }
 
-        let claims = simple_jwt::Claims::new(&dto.account, config::CONFIG.jwt.expire);
-        let token = simple_jwt::encode(&claims).map_err(|e| UseCaseError::Infrastructure(Box::new(e)))?;
+        let claims = simple_jwt::Claims::new(
+            &dto.account,
+            &config::CONFIG.jwt.issuer,
+            config::CONFIG.jwt.expire,
+        );
+        let token = simple_jwt::encode(&claims, &config::CONFIG.jwt.secret)
+            .map_err(|e| UseCaseError::Infrastructure(Box::new(e)))?;
 
         Ok(SigninResponse { token })
     }
 
     pub async fn authenticate(&self, token: &str) -> Result<String, UseCaseError> {
-        let claims = match simple_jwt::decode(token) {
+        let claims = match simple_jwt::decode(
+            token,
+            &config::CONFIG.jwt.issuer,
+            &config::CONFIG.jwt.secret,
+        ) {
             Ok(c) => c,
             Err(_) => return Err(UseCaseError::Unauthorized),
         };
