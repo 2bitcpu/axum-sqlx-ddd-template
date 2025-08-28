@@ -2,7 +2,7 @@
 database:
   # 接続文字列(デフォルト: "sqlite:data.db")
   dsn: "sqlite:data.db"
-  # dsn: "postgresql://devusr:devpwd@postgres-server:5432/dev_db"
+  # dsn: "postgres://devusr:devpwd@postgres-server:5432/dev_db"
 
   # DB初期化スクリプト(デフォルト: None)
   migration: "migration.sql"
