@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+config.workspace = true
 common.workspace = true
 presentation.workspace = true
 application.workspace = true
@@ -13,9 +14,3 @@ tracing-subscriber.workspace = true
 
 axum.workspace = true
 tokio.workspace = true
-sqlx.workspace = true
-libsqlite3-sys = { version = "^0.30.1", default-features = false, optional = true }
-
-[features]
-libsqlite3-sys = ["dep:libsqlite3-sys"]
-

@@ -40,7 +40,7 @@ docker run --rm -it --mount type=bind,source="$(pwd)",target=/project -w /projec
 
 ### 実行
 ```
-docker run --rm -it --mount type=bind,source="$(pwd)",target=/project -w /project -p 3333:3000 gcr.io/distroless/static-debian12 /project/target/aarch64-unknown-linux-musl/release/web-api
+docker run --rm -it --mount type=bind,source="$(pwd)",target=/project -w /project --network shared_devcontainer_net -p 3333:3000 gcr.io/distroless/static-debian12 /project/target/aarch64-unknown-linux-musl/release/web-api
 ```
 
 ## Command Line Options

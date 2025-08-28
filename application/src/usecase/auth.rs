@@ -3,7 +3,6 @@ use std::sync::Arc;
 use crate::errors::UseCaseError;
 use crate::model::auth::{SignupRequest, SignupResponse, SigninRequest, SigninResponse};
 use domain::{UnitOfWorkProvider, model::member::MemberEntity};
-use common::config;
 
 pub struct AuthUseCase {
     provider: Arc<dyn UnitOfWorkProvider + Send + Sync>,

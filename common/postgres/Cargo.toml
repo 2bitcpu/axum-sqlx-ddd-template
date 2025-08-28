@@ -1,0 +1,11 @@
+[package]
+name = "common"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+sqlx = { workspace = true, features = ["postgres"] }
+tokio = { workspace = true, features = ["fs"], default-features = false }
+
+config.workspace = true

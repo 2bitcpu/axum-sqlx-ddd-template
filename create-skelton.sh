@@ -19,7 +19,7 @@ cargo add axum --features macros
 cargo add axum-extra --features typed-header --no-default-features
 cargo add tower --features timeout --no-default-features
 cargo add tower-http --features fs,cors --no-default-features
-cargo add sqlx --features runtime-tokio-rustls,chrono,derive,sqlite --no-default-features
+cargo add sqlx --features runtime-tokio-rustls,chrono,derive --no-default-features
 cargo add jsonwebtoken --no-default-features
 cargo add uuid --features v4,serde --no-default-features
 cargo add argon2 --features alloc,password-hash,std --no-default-features
@@ -48,7 +48,8 @@ rm -rf _tmp
 
 cargo new libs/async-argon2 --lib
 cargo new libs/simple-jwt --lib
-cargo new common --lib
+cargo new config --lib
+cargo new common/sqlite --lib --name common
 cargo new domain --lib
 cargo new infrastructure --lib
 cargo new application --lib
@@ -67,12 +68,13 @@ cat <<EOF >> Cargo.toml
 
 async-argon2 = { path = "libs/async-argon2" }
 simple-jwt = { path = "libs/simple-jwt" }
-common = { path = "common" }
+config = { path = "config" }
+common = { path = "common/sqlite" }
 domain = { path = "domain" }
 infrastructure = { path = "infrastructure" }
 application = { path = "application" }
 presentation = { path = "presentation" }
-# simple-cms = { path = "simple-cms" }
+# web-api = { path = "web-api" }
 
 [profile.release]
 opt-level = "z"
@@ -156,7 +158,7 @@ impl Claims {
         let current_time: DateTime<Utc> = Utc::now();
         Self {
             sub: sub.to_string(),
-            iss: env!("CARGO_PKG_NAME").to_string(),
+            iss: exe_basename(),
             iat: current_time.timestamp(),
             exp: current_time.timestamp() + duration_seconds,
             jti: uuid::Uuid::new_v4().to_string(),
@@ -176,7 +178,7 @@ pub fn decode(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     let mut validation = Validation::default();
     validation.leeway = 30;
     validation.validate_exp = true;
-    validation.set_issuer(&[env!("CARGO_PKG_NAME")]);
+    validation.set_issuer(&[exe_basename()]);
     let claims: Claims = jsonwebtoken::decode::<Claims>(
         &token,
         &DecodingKey::from_secret(JWT_SECRET.to_string().as_ref()),
@@ -185,59 +187,28 @@ pub fn decode(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     .claims;
     Ok(claims)
 }
+
+fn exe_basename() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unknown".to_string())
+}
 EOF
 
 # ------------------------------------------------------------------------------
-# common
+# config
 # ------------------------------------------------------------------------------
-cat <<EOF >> common/Cargo.toml
+cat <<EOF >> config/Cargo.toml
 clap.workspace = true
 once_cell.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
-sqlx.workspace = true
-tokio = { workspace = true, features = ["fs"], default-features = false }
-tracing-subscriber.workspace = true
 uuid.workspace = true
+tracing-subscriber.workspace = true
 EOF
 
-
-cat <<EOF > common/src/types.rs
-pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
-
-pub type DbPool = sqlx::SqlitePool;
-pub type DbExecutor = sqlx::SqliteConnection;
-pub type Db = sqlx::sqlite::Sqlite;
-EOF
-
-cat <<EOF > common/src/setup.rs
-use crate::config;
-use crate::types::{BoxError, DbPool};
-
-use sqlx::Executor;
-use std::str::FromStr;
-
-use sqlx::sqlite::SqliteConnectOptions;
-
-pub async fn init_db(dsn: &str) -> Result<DbPool, BoxError> {
-    let options = SqliteConnectOptions::from_str(dsn)?.create_if_missing(true);
-    let pool = sqlx::SqlitePool::connect_with(options).await?;
-
-    if let Some(file) = &config::CONFIG.database.migration {
-        if let Ok(ddl) = tokio::fs::read_to_string(file).await {
-            for stmt in ddl.split(';') {
-                let stmt = stmt.trim();
-                if !stmt.is_empty() {
-                    pool.execute(stmt).await?;
-                }
-            }
-        }
-    }
-    Ok(pool)
-}
-EOF
-
-cat <<EOF > common/src/config.rs
+cat <<EOF > config/src/config.rs
 use clap::Parser;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -293,7 +264,7 @@ impl Default for Config {
                 static_dir: None,
             },
             jwt: JwtConfig {
-                issuer: env!("CARGO_PKG_NAME").to_string(),
+                issuer: Config::exe_basename(),
                 secret: Uuid::new_v4().to_string(),
                 expire: 60 * 60 * 24,
             },
@@ -529,8 +500,63 @@ pub struct Cli {
 }
 EOF
 
-cat <<EOF > common/src/lib.rs
-pub mod config;
+cat <<EOF > config/src/lib.rs
+mod config;
+pub use config::CONFIG;
+EOF
+
+
+# ------------------------------------------------------------------------------
+# common
+# ------------------------------------------------------------------------------
+cat <<EOF >> common/sqlite/Cargo.toml
+serde.workspace = true
+sqlx = { workspace = true, features = ["sqlite"] }
+tokio = { workspace = true, features = ["fs"], default-features = false }
+
+config.workspace = true
+
+EOF
+
+cd common/sqlite
+cargo add libsqlite3-sys@^0.30.1 --optional --no-default-features
+cd ../../
+
+cat <<EOF > common/sqlite/src/types.rs
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+pub type DbPool = sqlx::SqlitePool;
+pub type DbExecutor = sqlx::SqliteConnection;
+pub type Db = sqlx::sqlite::Sqlite;
+EOF
+
+cat <<EOF > common/sqlite/src/setup.rs
+use crate::types::{BoxError, DbPool};
+
+use sqlx::Executor;
+use std::str::FromStr;
+
+use sqlx::sqlite::SqliteConnectOptions;
+
+pub async fn init_db(dsn: &str) -> Result<DbPool, BoxError> {
+    let options = SqliteConnectOptions::from_str(dsn)?.create_if_missing(true);
+    let pool = DbPool::connect_with(options).await?;
+
+    if let Some(file) = &config::CONFIG.database.migration {
+        if let Ok(ddl) = tokio::fs::read_to_string(file).await {
+            for stmt in ddl.split(';') {
+                let stmt = stmt.trim();
+                if !stmt.is_empty() {
+                    pool.execute(stmt).await?;
+                }
+            }
+        }
+    }
+    Ok(pool)
+}
+EOF
+
+cat <<EOF > common/sqlite/src/lib.rs
 pub mod setup;
 pub mod types;
 EOF
@@ -543,6 +569,7 @@ sqlx.workspace = true
 serde.workspace = true
 chrono.workspace = true
 async-trait.workspace = true
+tracing-subscriber.workspace = true
 
 common.workspace = true
 EOF
@@ -673,7 +700,7 @@ pub struct TodoRepositoryImpl<'a> {
 impl<'a> TodoRepository for TodoRepositoryImpl<'a> {
     async fn insert(&mut self, entity: &TodoEntity) -> Result<TodoEntity, BoxError> {
         let rec = sqlx::query_as::<_, TodoEntity>(
-            "INSERT INTO todo (account,due_date,content,complete) VALUES (?,?,?,?) RETURNING *",
+            "INSERT INTO todo (account,due_date,content,complete) VALUES (\$1,\$2,\$3,\$4) RETURNING *",
         )
         .bind(&entity.account)
         .bind(&entity.due_date)
@@ -686,7 +713,7 @@ impl<'a> TodoRepository for TodoRepositoryImpl<'a> {
     }
 
     async fn selectl(&mut self, id: i64) -> Result<Option<TodoEntity>, BoxError> {
-        let rec = sqlx::query_as::<_, TodoEntity>("SELECT * FROM todo WHERE id = ?")
+        let rec = sqlx::query_as::<_, TodoEntity>("SELECT * FROM todo WHERE id=\$1")
             .bind(&id)
             .fetch_optional(&mut *self.executor)
             .await?;
@@ -710,7 +737,7 @@ pub struct MemberRepositoryImpl<'a> {
 #[async_trait]
 impl<'a> MemberRepository for MemberRepositoryImpl<'a> {
     async fn insert(&mut self, entity: &MemberEntity) -> Result<MemberEntity, BoxError> {
-        let rec = sqlx::query_as::<_, MemberEntity>("INSERT INTO member (account,password) VALUES (?,?) RETURNING *")
+        let rec = sqlx::query_as::<_, MemberEntity>("INSERT INTO member (account,password) VALUES (\$1,\$2) RETURNING *")
             .bind(&entity.account)
             .bind(&entity.password)
             .fetch_one(&mut *self.executor)
@@ -720,7 +747,7 @@ impl<'a> MemberRepository for MemberRepositoryImpl<'a> {
     }
 
     async fn select(&mut self, account: &str) -> Result<Option<MemberEntity>, BoxError> {
-        let rec = sqlx::query_as::<_, MemberEntity>("SELECT * FROM member WHERE  account=?")
+        let rec = sqlx::query_as::<_, MemberEntity>("SELECT * FROM member WHERE account=\$1")
             .bind(&account)
             .fetch_optional(&mut *self.executor)
             .await?;
@@ -804,6 +831,7 @@ derive-new.workspace = true
 chrono.workspace = true
 async-trait.workspace = true
 
+config.workspace = true
 common.workspace = true
 domain.workspace = true
 simple-jwt.workspace = true
@@ -933,7 +961,6 @@ use std::sync::Arc;
 use crate::errors::UseCaseError;
 use crate::model::auth::{SignupRequest, SignupResponse, SigninRequest, SigninResponse};
 use domain::{UnitOfWorkProvider, model::member::MemberEntity};
-use common::config;
 
 pub struct AuthUseCase {
     provider: Arc<dyn UnitOfWorkProvider + Send + Sync>,
@@ -1122,6 +1149,7 @@ serde.workspace = true
 serde_json.workspace = true
 tower-http.workspace = true
 
+config.workspace = true
 common.workspace = true
 application.workspace = true
 EOF
@@ -1341,6 +1369,7 @@ pub mod todo;
 EOF
 
 cat <<EOF > presentation/src/router.rs
+#[allow(unused_imports)]
 use axum::{
     Router,
     http::{HeaderValue, Method},
@@ -1353,7 +1382,6 @@ use tower_http::{cors::CorsLayer, services::ServeDir};
 use crate::handler::{auth, todo};
 use crate::middleware::auth::{auth_guard, auth_option_guard};
 use application::UseCaseModule;
-use common::config;
 
 pub fn create(usecases: Arc<dyn UseCaseModule>) -> Router {
     let auth_router = Router::new()
@@ -1409,6 +1437,7 @@ EOF
 # web-api
 # ------------------------------------------------------------------------------
 cat <<EOF >> web-api/Cargo.toml
+config.workspace = true
 common.workspace = true
 presentation.workspace = true
 application.workspace = true
@@ -1418,17 +1447,11 @@ tracing-subscriber.workspace = true
 
 axum.workspace = true
 tokio.workspace = true
-sqlx.workspace = true
-
 EOF
-
-cd web-api
-cargo add libsqlite3-sys@^0.30.1 --optional --no-default-features
-cd ../
 
 cat <<EOF > web-api/src/main.rs
 use application::UseCaseModuleImpl;
-use common::{config, setup::init_db, types::BoxError};
+use common::{setup::init_db, types::BoxError};
 use infrastructure::UnitOfWorkProviderImpl;
 use presentation::router;
 use std::sync::Arc;
@@ -1503,4 +1526,56 @@ cat <<EOF > html/index.html
 </head>
 <body> This is static html </body>
 </html>
+EOF
+
+mkdir -p common/postgres
+
+cp -r common/sqlite/* common/postgres/
+
+cat <<EOF > common/postgres/Cargo.toml
+[package]
+name = "common"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+sqlx = { workspace = true, features = ["postgres"] }
+tokio = { workspace = true, features = ["fs"], default-features = false }
+
+config.workspace = true
+EOF
+
+cat <<EOF > common/postgres/src/setup.rs
+use crate::types::{BoxError, DbPool};
+
+use sqlx::Executor;
+use std::str::FromStr;
+
+use sqlx::postgres::PgConnectOptions;
+
+pub async fn init_db(dsn: &str) -> Result<DbPool, BoxError> {
+    let options = PgConnectOptions::from_str(dsn)?;
+    let pool = DbPool::connect_with(options).await?;
+
+    if let Some(file) = &config::CONFIG.database.migration {
+        if let Ok(ddl) = tokio::fs::read_to_string(file).await {
+            for stmt in ddl.split(';') {
+                let stmt = stmt.trim();
+                if !stmt.is_empty() {
+                    pool.execute(stmt).await?;
+                }
+            }
+        }
+    }
+    Ok(pool)
+}
+EOF
+
+cat <<EOF > common/postgres/src/types.rs
+pub type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+pub type DbPool = sqlx::PgPool;
+pub type DbExecutor = sqlx::PgConnection;
+pub type Db = sqlx::postgres::Postgres;
 EOF

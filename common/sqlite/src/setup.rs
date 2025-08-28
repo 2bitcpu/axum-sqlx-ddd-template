@@ -1,4 +1,3 @@
-use crate::config;
 use crate::types::{BoxError, DbPool};
 
 use sqlx::Executor;
@@ -8,7 +7,7 @@ use sqlx::sqlite::SqliteConnectOptions;
 
 pub async fn init_db(dsn: &str) -> Result<DbPool, BoxError> {
     let options = SqliteConnectOptions::from_str(dsn)?.create_if_missing(true);
-    let pool = sqlx::SqlitePool::connect_with(options).await?;
+    let pool = DbPool::connect_with(options).await?;
 
     if let Some(file) = &config::CONFIG.database.migration {
         if let Ok(ddl) = tokio::fs::read_to_string(file).await {

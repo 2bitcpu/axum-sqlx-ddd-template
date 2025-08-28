@@ -53,7 +53,7 @@ impl Default for Config {
                 static_dir: None,
             },
             jwt: JwtConfig {
-                issuer: env!("CARGO_PKG_NAME").to_string(),
+                issuer: Config::exe_basename(),
                 secret: Uuid::new_v4().to_string(),
                 expire: 60 * 60 * 24,
             },

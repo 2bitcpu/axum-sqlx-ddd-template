@@ -9,6 +9,7 @@ derive-new.workspace = true
 chrono.workspace = true
 async-trait.workspace = true
 
+config.workspace = true
 common.workspace = true
 domain.workspace = true
 simple-jwt.workspace = true

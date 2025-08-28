@@ -12,7 +12,7 @@ pub struct TodoRepositoryImpl<'a> {
 impl<'a> TodoRepository for TodoRepositoryImpl<'a> {
     async fn insert(&mut self, entity: &TodoEntity) -> Result<TodoEntity, BoxError> {
         let rec = sqlx::query_as::<_, TodoEntity>(
-            "INSERT INTO todo (account,due_date,content,complete) VALUES (?,?,?,?) RETURNING *",
+            "INSERT INTO todo (account,due_date,content,complete) VALUES ($1,$2,$3,$4) RETURNING *",
         )
         .bind(&entity.account)
         .bind(&entity.due_date)
@@ -25,7 +25,7 @@ impl<'a> TodoRepository for TodoRepositoryImpl<'a> {
     }
 
     async fn selectl(&mut self, id: i64) -> Result<Option<TodoEntity>, BoxError> {
-        let rec = sqlx::query_as::<_, TodoEntity>("SELECT * FROM todo WHERE id = ?")
+        let rec = sqlx::query_as::<_, TodoEntity>("SELECT * FROM todo WHERE id=$1")
             .bind(&id)
             .fetch_optional(&mut *self.executor)
             .await?;

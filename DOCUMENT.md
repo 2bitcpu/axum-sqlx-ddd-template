@@ -1,6 +1,5 @@
-
-
 #### 
+
 ```
 # 共通設定
 HOST="http://localhost:3000"
@@ -30,4 +29,32 @@ curl -i -X DELETE "$HOST/service/manage/todo/1" -H "Authorization: Bearer $TOKEN
 # 6. コンテンツ取得（GET）
 curl -s "$HOST/service/todo/1"
 curl -s "$HOST/service/todo/1" -H "Authorization: Bearer $TOKEN"
+```
+
+```
+# postgresqlサーバー起動(postgres-dbボリュームで永続化して、使用するクライアントと同じネットワークを指定するのがキモ)
+docker run --rm --name postgres-server -d -v postgres-db:/var/lib/postgresql/data --network shared_devcontainer_net -p 5432:5432 -e POSTGRES_PASSWORD=p@55w0rd postgres:alpine
+
+# サーバーに入る
+docker exec -it postgres-server 
+
+# postgresqlクライアントで操作
+psql -h localhost -U postgres
+
+# ユーザー確認
+\du
+
+# ユーザー追加
+create user devusr with password 'devpwd';
+
+\du
+
+# データベースを作成して追加したユーザーをオーナーに
+create database dev_db with owner devusr;
+
+\l
+
+quit
+
+psql -h postgres-server -d dev_db -U devusr
 ```

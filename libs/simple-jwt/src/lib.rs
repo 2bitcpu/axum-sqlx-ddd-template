@@ -19,7 +19,7 @@ impl Claims {
         let current_time: DateTime<Utc> = Utc::now();
         Self {
             sub: sub.to_string(),
-            iss: env!("CARGO_PKG_NAME").to_string(),
+            iss: exe_basename(),
             iat: current_time.timestamp(),
             exp: current_time.timestamp() + duration_seconds,
             jti: uuid::Uuid::new_v4().to_string(),
@@ -39,7 +39,7 @@ pub fn decode(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     let mut validation = Validation::default();
     validation.leeway = 30;
     validation.validate_exp = true;
-    validation.set_issuer(&[env!("CARGO_PKG_NAME")]);
+    validation.set_issuer(&[exe_basename()]);
     let claims: Claims = jsonwebtoken::decode::<Claims>(
         &token,
         &DecodingKey::from_secret(JWT_SECRET.to_string().as_ref()),
@@ -47,4 +47,11 @@ pub fn decode(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     )?
     .claims;
     Ok(claims)
+}
+
+fn exe_basename() -> String {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unknown".to_string())
 }

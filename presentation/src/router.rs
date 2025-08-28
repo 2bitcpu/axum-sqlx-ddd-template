@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use axum::{
     Router,
     http::{HeaderValue, Method},
@@ -10,7 +11,6 @@ use tower_http::{cors::CorsLayer, services::ServeDir};
 use crate::handler::{auth, todo};
 use crate::middleware::auth::{auth_guard, auth_option_guard};
 use application::UseCaseModule;
-use common::config;
 
 pub fn create(usecases: Arc<dyn UseCaseModule>) -> Router {
     let auth_router = Router::new()

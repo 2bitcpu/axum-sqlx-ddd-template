@@ -1,5 +1,5 @@
 use application::UseCaseModuleImpl;
-use common::{config, setup::init_db, types::BoxError};
+use common::{setup::init_db, types::BoxError};
 use infrastructure::UnitOfWorkProviderImpl;
 use presentation::router;
 use std::sync::Arc;
